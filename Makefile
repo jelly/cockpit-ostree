@@ -104,12 +104,30 @@ rpm: $(RPMFILE)
 $(RPMFILE): $(SRPMFILE) bots
 	test/rpmbuild-local $(SRPMFILE)
 
+ifeq ("$(TEST_SCENARIO)","pybridge")
+COCKPIT_PYBRIDGE_REF = main
+COCKPIT_WHEEL = cockpit-0-py3-none-any.whl
+
+$(COCKPIT_WHEEL):
+	# aka: pip wheel git+https://github.com/cockpit-project/cockpit.git@${COCKPIT_PYBRIDGE_REF}
+	rm -rf tmp/pybridge
+	git init tmp/pybridge
+	git -C tmp/pybridge remote add origin https://github.com/cockpit-project/cockpit
+	git -C tmp/pybridge fetch --depth=1 origin ${COCKPIT_PYBRIDGE_REF}
+	git -C tmp/pybridge reset --hard FETCH_HEAD
+	cp "$$(tmp/pybridge/tools/make-wheel)" $@
+
+VM_DEPENDS = $(COCKPIT_WHEEL)
+VM_CUSTOMIZE_FLAGS = --install $(COCKPIT_WHEEL)
+endif
+
 # build a VM with locally built rpm installed, cockpit/ws container, and local
 # ostree for testing
-$(VM_IMAGE): rpm bots
+$(VM_IMAGE): rpm bots $(VM_DEPENDS)
 	rm -f $(VM_IMAGE) $(VM_IMAGE).qcow2
 	bots/image-customize -v --upload $$(ls $(PACKAGE_NAME)-*.noarch.rpm):/tmp/ \
 		--no-network \
+		$(VM_CUSTOMIZE_FLAGS) \
 		--run-command 'rpm -q cockpit-ostree && rpm-ostree --cache-only override replace /tmp/*.rpm || rpm-ostree --cache-only install /tmp/*.rpm' \
 		$(TEST_OS)
 	# building the local tree needs the modified tree from above booted already
